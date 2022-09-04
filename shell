@@ -1,0 +1,253 @@
+// Modify this file for your assignment
+#include <unistd.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <signal.h> //for command signal to exit
+#define MAX_INPUT_SIZE 80
+#include <sys/types.h>
+#include <sys/wait.h>
+
+char input [81];
+	
+void initialize_shell(){
+
+	system("clear"); //clear the current screen
+	printf("\n\n\n*******************************************************************");
+	printf("\n\n\t\tWelcome to Mariah's shell");
+	printf("\n\n\n*******************************************************************");
+
+
+
+}
+
+void help(){
+	printf("WELCOME to Mariah's terminal.The following built in commands are supported.\n");
+	printf("cd -- displays current location in the directory\n");
+	printf("exit -- will close the current terminal\n");
+	printf("help -- displays all the available built-in commands\n");
+	printf("history -- this command will print all previous user input\n");
+
+
+}
+
+
+void term_commands(char** array, int* p){
+
+	pid_t pid = fork(); //create child process
+	int status;
+
+	if(pid == 0){ //child process
+		execvp(array[0],array); //perform command
+
+		exit(1);		
+	}
+
+	else{	
+		wait(NULL); //wait for child process to execute
+		
+	}
+	
+
+}
+
+
+void sigint_handler(int sig){
+
+	write(1,"Mini-shell terminated\n",22);
+	exit(0);
+
+
+}
+
+void print_history(char** hist, int count){
+	int i;
+	for(i=0; i<count;i++){ //loop through array
+		printf(" %s\n",hist[i]); //print each array element (command)
+	}	
+
+
+}
+
+void add_history(char* string, int count,char** hist){
+	hist[count] = strdup(string);
+
+}
+void builtin_commands(char* command, char** array, char** hist, int count){
+
+	if(strcmp(command,"help")==0){
+		
+		help(); //go to help function
+	}
+	else if(strcmp(command,"history")==0){
+		
+		print_history(hist,count); //print history array
+	}
+	else if(strcmp(command,"cd")==0){
+		
+		chdir(array[1]); //change directory
+	}
+
+
+}
+
+
+void read_pipe(char** command1, char** command2){
+	
+	int fd[2];
+	pipe(fd);
+	//beginning pipe processing now..
+	int pid1 = fork();
+
+	if(pid1 ==0) { //child process
+	dup2(fd[1],STDOUT_FILENO); //write end of the pipe is fd1
+	close(fd[0]);
+	close(fd[1]);
+	//call execvp function here
+	execvp(command1[0],command1); //perform command
+	exit(1);
+
+	}
+	waitpid(pid1,NULL,0);
+
+	int pid2 = fork();
+
+	if(pid2==0){ //child
+	dup2(fd[0], STDIN_FILENO);
+	close(fd[0]);
+	close(fd[1]);
+	//write execvp function here
+	execvp(command2[0],command2);
+	exit(1);	
+	
+	}
+	close(fd[0]);
+	close(fd[1]);
+	waitpid(pid2,NULL,0);
+
+	
+}
+
+
+void command_type(char input[],char** parsed_tok,char** _history, int count){
+
+	int flag = 0;//flag will change if command is supported within mini shell
+	int flag2 = 0;
+	char* builtin [] = {"help","history","cd"};
+
+	char* command;
+	command = parsed_tok[0]; //looking at first command word
+	int i;	
+
+
+	//Checking the type of command now..	
+
+
+	//checking if builtin
+	for(i=0;i<3;i++){
+		if(strcmp(command,builtin[i]) == 0){ //checking for builtin command
+
+			builtin_commands(builtin[i],parsed_tok,_history,count);			
+			break;
+		}
+
+	}
+	
+
+	//checking if terminal command
+	term_commands(parsed_tok,&flag2);
+
+}
+
+void parse_commands(char input[],int count,char** _history){
+
+	add_history(input,count,_history);	
+
+	char* parsed_tok[80]; //array of 80 strings
+	char* parsed_tok2[80]; //holds strings after pipe
+	char* token = strtok(input, " ");
+	
+	int pipe_found=0;	
+	int i = 0;		
+	int j = 0; //counter for number of tokens
+	while(token != NULL){ //splitting input into strings
+		if(strcmp(token,"|")==0){ //checking for pipe operator in command
+			token = strtok(NULL, " "); //if found, token is saved and while loop broken
+			pipe_found = 1;
+			break;
+		}
+		parsed_tok[i++] = token;
+
+		j++;
+		token = strtok(NULL, " ");
+		
+		}
+	
+	parsed_tok[i] = NULL;
+	
+	if(pipe_found ==1){
+		i = 0;
+		while(token !=NULL){ //store right command of pipe
+			parsed_tok2[i++] = token;
+			token = strtok(NULL," ");	
+		
+		}
+	parsed_tok2[i] = NULL;
+	}
+
+	if(pipe_found ==1){ //pipe reading function
+		read_pipe(parsed_tok,parsed_tok2);
+	}
+	else{ 
+	command_type(input,parsed_tok,_history,count);
+
+	}
+}
+
+
+int main(){
+  alarm(180); // Please leave in this line as the first statement in your program.
+              // This will terminate your shell after 180 seconds,
+              // and is useful in the case that you accidently create a 'fork bomb'
+  
+	signal(SIGINT, sigint_handler);
+
+	initialize_shell();
+
+	
+	printf("\nYou can only terminate by pressing Ctrl+c\n");
+	
+	char** _history = (char**)malloc(sizeof(char*) * 80);
+	int count = 0; //track number of commands for history array
+	while(1){ //will run forever
+		char* inputp;
+
+		printf("mini-shell>");
+
+		inputp = fgets(input,MAX_INPUT_SIZE,stdin); //getting user input & storing in array
+		input[strlen(input)-1] = '\0'; //removing null character at end of string
+		
+		if(strcmp(input,"exit")==0){ //checking if user wants to exit
+			int i;
+			for(i=0; i<count;i++){ //loop through array
+				free(_history[i]); //print each array element (command)
+			}	
+			free(_history);
+			exit(0);
+	
+		}
+
+		else{
+		parse_commands(input,count,_history);
+		count++; 
+		sleep(1);
+		}
+	
+
+
+
+	}
+
+  return 0;
+
+}
